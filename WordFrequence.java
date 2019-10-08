@@ -1,3 +1,4 @@
+
 import javax.net.ssl.SNIHostName;
 import javax.sound.sampled.Line;
 import java.io.BufferedReader;
@@ -6,17 +7,26 @@ import java.io.FileReader;
 import java.sql.ResultSet;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.zip.CheckedOutputStream;
 
 
 public class WordFrequence{
 
     /**
      *  -c : 统计字母频率
+     *  java WordFrequence -c (filePath)
+     *
      *  -f : 统计不重复的单词
+     *  java WordFrequence -f (filePath) <-n>
+     *
      *  -d : 指定文件目录，对目录下每个文件统计不重复的单词
      *      -s : 递归目录下所有的子目录
      *      -n : 输出前n个单词的频率
-     *  -x : 停词
+     *  java WrodFrequence -d <-s> (filePath) <-n>
+     *
+     *  -x : 停词<filePath>
+     *      -f : 停词过后的<filePath>
+     *  java WordFrequence -x (stopFile) -f (filePath) <-n>
      * @param args
      * @throws Exception
      */
@@ -26,32 +36,31 @@ public class WordFrequence{
         }else{
             //字母统计
             if(args[0].equals("-c")){
+                System.out.println("字母统计");
                 String path = getPath(args,1);
                 System.out.println("文件为：" + path);
                 getLetterRate(path);
-            }else if (args[0].equals("-f")){
-                if(args[1].startsWith("-")){
-                    int n = Math.abs(Integer.parseInt(args[1].substring(1)));
-                    String path = getPath(args,2);
-                    System.out.println("文件为：" + path);
-                    getWordFrequence(path,n);
-                }else{
-                    String path = getPath(args,1);
-                    System.out.println("文件为：" + path);
-                    getWordFrequence(path,0);
+            }
+            //单词统计
+            else if (args[0].equals("-f")){
+                System.out.println("单词统计");
+                String path = getPath(args,1);
+                System.out.println("文件为：" + path);
+                int n = 0;
+                if(args[args.length-1].startsWith("-")) {
+                    n = Math.abs(Integer.parseInt(args[args.length-1].substring(1)));
                 }
-                //整个文件夹下的文件的单词统计
-            }else if(args[0].equals("-d")){
+                getWordFrequence(path,n);
+            }
+            //整个文件夹下的文件的单词统计
+            else if(args[0].equals("-d")){
                 //递归所有子目录
                 if(args[1].equals("-s")){
-                    String directory = "";
+                    String directory = getPath(args,2);
                     //如果有-n命令
                     int n = 0;
-                    if(args[2].startsWith("-")){
-                        n = Math.abs(Integer.parseInt(args[2].substring(1)));
-                        directory = getPath(args,3);
-                    }else{
-                        directory = getPath(args,2);
+                    if(args[args.length-1].startsWith("-")){
+                        n = Math.abs(Integer.parseInt(args[args.length-1].substring(1)));
                     }
                     /**
                      * TODO 递归读取所有子目录中的文件
@@ -64,13 +73,11 @@ public class WordFrequence{
                     }
                 }else {
                     int n = 0;
-                    String directory = "";
+                    String directory = getPath(args,1);;
                     //如果有-n命令
-                    if(args[1].startsWith("-")){
-                        n = Math.abs(Integer.parseInt(args[1].substring(1)));
-                        directory = getPath(args,2);
-                    }else {
-                        directory = getPath(args,1);
+                    System.out.println(directory);
+                    if(args[args.length-1].startsWith("-")){
+                        n = Math.abs(Integer.parseInt(args[args.length-1].substring(1)));
                     }
                     List<String> filePath = getFilePaths(directory);
                     for(String path : filePath){
@@ -78,6 +85,21 @@ public class WordFrequence{
                         getWordFrequence(path,n);
                     }
                 }
+            }
+            else if(args[0].equals("-x")){
+                System.out.println("有停词表的单词统计");
+                /**
+                 * stopFile.txt无空格视为一个参数
+                 * -f 后的路径直接取
+                 * -n 在最后
+                 */
+                String stopWord = getPath(args,1);
+                String filePath = getPath(args,3);
+                int n = 0;
+                if(args[args.length-1].startsWith("-")){
+                    n = Math.abs(Integer.parseInt(args[args.length-1]));
+                }
+                getWordFrequenceWithoutStopWord(stopWord,filePath,n);
             }
         }
 
@@ -207,12 +229,12 @@ public class WordFrequence{
      */
     public static List<String> getFilePaths(String folder){
         File file = new File(folder);
-        System.out.println(file.toString());
         File[] files = file.listFiles();
-        List<String> filePaths = new ArrayList<>( );
+        List<String> filePaths = new ArrayList<>();
         for(File f : files){
             if (f.isFile()){
-                filePaths.add(f.getAbsolutePath());
+                System.out.println(f.getName());
+                filePaths.add(f.getName());
             }
         }
         return filePaths;
@@ -238,5 +260,47 @@ public class WordFrequence{
             }
         }
         return filePath;
+    }
+
+    public static void getWordFrequenceWithoutStopWord(String stopWordPath,String filePath,int n)throws Exception{
+        Map<String,Integer> map = new TreeMap<>();
+        String stopWordText = getFileText(stopWordPath);
+        String text = getFileText(filePath);
+        String[] stopWords = stopWordText.split("\\W+");
+        String[] words = text.split("\\W+");
+        for(String stopWord : stopWords){
+            if(!map.containsKey(stopWord)){
+                map.put(stopWord,0);
+            }
+        }
+        for(String word : words){
+            if(map.containsKey(word)){
+                if(!(map.get(word).intValue() == 0)){
+                    map.put(word,map.get(word)+1);
+                }
+            }else {
+                map.put(word,1);
+            }
+        }
+
+        /**
+         * TreeMap无法直接排序 将其转化为List在排序
+         */
+        List<Entry<String,Integer>> list = new ArrayList<>(map.entrySet());
+        Collections.sort(list, new Comparator<Entry<String, Integer>>() {
+            @Override
+            public int compare(Entry<String, Integer> o1, Entry<String, Integer> o2) {
+                return 0 - (o1.getValue().compareTo(o2.getValue()));
+            }
+        });
+        /**
+         * 输出
+         */
+        if(n == 0) n = list.size();
+        for(int i = 0;i < n && i < list.size();i++){
+            if(!(list.get(i).getValue().intValue() == 0)){
+                System.out.println(list.get(i).getKey() + ":" + list.get(i).getValue());
+            }
+        }
     }
 }
